@@ -64,7 +64,7 @@ type StructValidator interface {
 // Validator is the default validator which implements the StructValidator
 // interface. It uses https://github.com/go-playground/validator/tree/v10.6.1
 // under the hood.
-var Validator StructValidator = &defaultValidator{}
+var Validator StructValidator
 
 // These implement the Binding interface and can be used to bind the data
 // present in the request to struct instances.
@@ -75,7 +75,6 @@ var (
 	Query         = queryBinding{}
 	FormPost      = formPostBinding{}
 	FormMultipart = formMultipartBinding{}
-	ProtoBuf      = protobufBinding{}
 	YAML          = yamlBinding{}
 	Uri           = uriBinding{}
 	Header        = headerBinding{}
@@ -93,8 +92,6 @@ func Default(method, contentType string) Binding {
 		return JSON
 	case MIMEXML, MIMEXML2:
 		return XML
-	case MIMEPROTOBUF:
-		return ProtoBuf
 	case MIMEYAML:
 		return YAML
 	case MIMEMultipartPOSTForm:

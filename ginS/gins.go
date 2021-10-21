@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/gin-gonic/gin"
+	"github.com/imkos/gin"
 )
 
-var once sync.Once
-var internalEngine *gin.Engine
+var (
+	once           sync.Once
+	internalEngine *gin.Engine
+)
 
 func engine() *gin.Engine {
 	once.Do(func() {

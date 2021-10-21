@@ -67,7 +67,7 @@ type StructValidator interface {
 // Validator is the default validator which implements the StructValidator
 // interface. It uses https://github.com/go-playground/validator/tree/v10.6.1
 // under the hood.
-var Validator StructValidator = &defaultValidator{}
+var Validator StructValidator
 
 // These implement the Binding interface and can be used to bind the data
 // present in the request to struct instances.

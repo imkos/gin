@@ -2,6 +2,9 @@
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
+//go:build !noproto
+// +build !noproto
+
 package render
 
 import (
@@ -9,6 +12,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 )
+
+var _ Render = ProtoBuf{}
 
 // ProtoBuf contains the given interface object.
 type ProtoBuf struct {

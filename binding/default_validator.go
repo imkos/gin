@@ -2,6 +2,9 @@
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
+//go:build !novalidator
+// +build !novalidator
+
 package binding
 
 import (
@@ -12,6 +15,10 @@ import (
 
 	"github.com/go-playground/validator/v10"
 )
+
+func init() {
+	Validator = &defaultValidator{}
+}
 
 type defaultValidator struct {
 	once     sync.Once

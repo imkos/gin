@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/gin-contrib/sse"
-	"github.com/gin-gonic/gin/binding"
-	"github.com/gin-gonic/gin/render"
+	"github.com/imkos/gin/binding"
+	"github.com/imkos/gin/render"
 )
 
 // Content-Type MIME of the most common data formats.
@@ -1000,11 +1000,6 @@ func (c *Context) XML(code int, obj interface{}) {
 // YAML serializes the given struct as YAML into the response body.
 func (c *Context) YAML(code int, obj interface{}) {
 	c.Render(code, render.YAML{Data: obj})
-}
-
-// ProtoBuf serializes the given struct as ProtoBuf into the response body.
-func (c *Context) ProtoBuf(code int, obj interface{}) {
-	c.Render(code, render.ProtoBuf{Data: obj})
 }
 
 // String writes the given string into the response body.
