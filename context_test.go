@@ -12,8 +12,10 @@ import (
 	"html/template"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -1032,6 +1034,19 @@ func TestContextRenderAttachment(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("attachment; filename=\"%s\"", newFilename), w.Header().Get("Content-Disposition"))
 }
 
+func TestContextRenderUTF8Attachment(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := CreateTestContext(w)
+	newFilename := "new🧡_filename.go"
+
+	c.Request, _ = http.NewRequest("GET", "/", nil)
+	c.FileAttachment("./gin.go", newFilename)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "func New() *Engine {")
+	assert.Equal(t, `attachment; filename*=UTF-8''`+url.QueryEscape(newFilename), w.Header().Get("Content-Disposition"))
+}
+
 // TestContextRenderYAML tests that the response is serialized as YAML
 // and Content-Type is set to application/x-yaml
 func TestContextRenderYAML(t *testing.T) {
@@ -1404,6 +1419,11 @@ func TestContextClientIP(t *testing.T) {
 	// Tests exercising the TrustedProxies functionality
 	resetContextForClientIPTests(c)
 
+	// IPv6 support
+	c.Request.RemoteAddr = "[::1]:12345"
+	assert.Equal(t, "20.20.20.20", c.ClientIP())
+
+	resetContextForClientIPTests(c)
 	// No trusted proxies
 	_ = c.engine.SetTrustedProxies([]string{})
 	c.engine.RemoteIPHeaders = []string{"X-Forwarded-For"}
@@ -1500,6 +1520,7 @@ func resetContextForClientIPTests(c *Context) {
 	c.Request.Header.Set("CF-Connecting-IP", "60.60.60.60")
 	c.Request.RemoteAddr = "  40.40.40.40:42123 "
 	c.engine.TrustedPlatform = ""
+	c.engine.trustedCIDRs = defaultTrustedCIDRs
 	c.engine.AppEngine = false
 }
 
@@ -2029,8 +2050,8 @@ func TestRaceParamsContextCopy(t *testing.T) {
 			}(c.Copy(), c.Param("name"))
 		})
 	}
-	performRequest(router, "GET", "/name1/api")
-	performRequest(router, "GET", "/name2/api")
+	PerformRequest(router, "GET", "/name1/api")
+	PerformRequest(router, "GET", "/name2/api")
 	wg.Wait()
 }
 
@@ -2051,7 +2072,8 @@ func TestRemoteIPFail(t *testing.T) {
 	c, _ := CreateTestContext(httptest.NewRecorder())
 	c.Request, _ = http.NewRequest("POST", "/", nil)
 	c.Request.RemoteAddr = "[:::]:80"
-	ip, trust := c.RemoteIP()
+	ip := net.ParseIP(c.RemoteIP())
+	trust := c.engine.isTrustedProxy(ip)
 	assert.Nil(t, ip)
 	assert.False(t, trust)
 }
