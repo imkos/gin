@@ -1,4 +1,4 @@
-// Copyright 2014 Manu Martinez-Almeida.  All rights reserved.
+// Copyright 2014 Manu Martinez-Almeida. All rights reserved.
 // Use of this source code is governed by a MIT style
 // license that can be found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -40,6 +41,11 @@ var defaultTrustedCIDRs = []*net.IPNet{
 	},
 }
 
+var (
+	regSafePrefix         = regexp.MustCompile("[^a-zA-Z0-9/-]+")
+	regRemoveRepeatedChar = regexp.MustCompile("/{2,}")
+)
+
 // HandlerFunc defines the handler used by gin middleware as return value.
 type HandlerFunc func(*Context)
 
@@ -67,10 +73,10 @@ type RoutesInfo []RouteInfo
 
 // Trusted platforms
 const (
-	// When running on Google App Engine. Trust X-Appengine-Remote-Addr
+	// PlatformGoogleAppEngine when running on Google App Engine. Trust X-Appengine-Remote-Addr
 	// for determining the client's IP
 	PlatformGoogleAppEngine = "X-Appengine-Remote-Addr"
-	// When using Cloudflare's CDN. Trust CF-Connecting-IP for determining
+	// PlatformCloudflare when using Cloudflare's CDN. Trust CF-Connecting-IP for determining
 	// the client's IP
 	PlatformCloudflare = "CF-Connecting-IP"
 )
@@ -80,14 +86,14 @@ const (
 type Engine struct {
 	RouterGroup
 
-	// Enables automatic redirection if the current route can't be matched but a
+	// RedirectTrailingSlash enables automatic redirection if the current route can't be matched but a
 	// handler for the path with (without) the trailing slash exists.
 	// For example if /foo/ is requested but a route only exists for /foo, the
 	// client is redirected to /foo with http status code 301 for GET requests
 	// and 307 for all other request methods.
 	RedirectTrailingSlash bool
 
-	// If enabled, the router tries to fix the current request path, if no
+	// RedirectFixedPath if enabled, the router tries to fix the current request path, if no
 	// handle is registered for it.
 	// First superfluous path elements like ../ or // are removed.
 	// Afterwards the router does a case-insensitive lookup of the cleaned path.
@@ -98,7 +104,7 @@ type Engine struct {
 	// RedirectTrailingSlash is independent of this option.
 	RedirectFixedPath bool
 
-	// If enabled, the router checks if another method is allowed for the
+	// HandleMethodNotAllowed if enabled, the router checks if another method is allowed for the
 	// current route, if the current request can not be routed.
 	// If this is the case, the request is answered with 'Method Not Allowed'
 	// and HTTP status code 405.
@@ -106,21 +112,22 @@ type Engine struct {
 	// handler.
 	HandleMethodNotAllowed bool
 
-	// If enabled, client IP will be parsed from the request's headers that
+	// ForwardedByClientIP if enabled, client IP will be parsed from the request's headers that
 	// match those stored at `(*gin.Engine).RemoteIPHeaders`. If no IP was
 	// fetched, it falls back to the IP obtained from
 	// `(*gin.Context).Request.RemoteAddr`.
 	ForwardedByClientIP bool
 
-	// DEPRECATED: USE `TrustedPlatform` WITH VALUE `gin.PlatformGoogleAppEngine` INSTEAD
+	// AppEngine was deprecated.
+	// Deprecated: USE `TrustedPlatform` WITH VALUE `gin.PlatformGoogleAppEngine` INSTEAD
 	// #726 #755 If enabled, it will trust some headers starting with
 	// 'X-AppEngine...' for better integration with that PaaS.
 	AppEngine bool
 
-	// If enabled, the url.RawPath will be used to find parameters.
+	// UseRawPath if enabled, the url.RawPath will be used to find parameters.
 	UseRawPath bool
 
-	// If true, the path value will be unescaped.
+	// UnescapePathValues if true, the path value will be unescaped.
 	// If UseRawPath is false (by default), the UnescapePathValues effectively is true,
 	// as url.Path gonna be used, which is already unescaped.
 	UnescapePathValues bool
@@ -129,22 +136,25 @@ type Engine struct {
 	// See the PR #1817 and issue #1644
 	RemoveExtraSlash bool
 
-	// List of headers used to obtain the client IP when
+	// RemoteIPHeaders list of headers used to obtain the client IP when
 	// `(*gin.Engine).ForwardedByClientIP` is `true` and
 	// `(*gin.Context).Request.RemoteAddr` is matched by at least one of the
 	// network origins of list defined by `(*gin.Engine).SetTrustedProxies()`.
 	RemoteIPHeaders []string
 
-	// If set to a constant of value gin.Platform*, trusts the headers set by
+	// TrustedPlatform if set to a constant of value gin.Platform*, trusts the headers set by
 	// that platform, for example to determine the client IP
 	TrustedPlatform string
 
-	// Value of 'maxMemory' param that is given to http.Request's ParseMultipartForm
+	// MaxMultipartMemory value of 'maxMemory' param that is given to http.Request's ParseMultipartForm
 	// method call.
 	MaxMultipartMemory int64
 
-	// Enable h2c support.
+	// UseH2C enable h2c support.
 	UseH2C bool
+
+	// ContextWithFallback enable fallback Context.Deadline(), Context.Done(), Context.Err() and Context.Value() when Context.Request.Context() is not nil.
+	ContextWithFallback bool
 
 	delims           render.Delims
 	secureJSONPrefix string
@@ -162,7 +172,7 @@ type Engine struct {
 	trustedCIDRs     []*net.IPNet
 }
 
-var _ IRouter = &Engine{}
+var _ IRouter = (*Engine)(nil)
 
 // New returns a new blank Engine instance without any middleware attached.
 // By default, the configuration is:
@@ -194,12 +204,12 @@ func New() *Engine {
 		trees:                  make(methodTrees, 0, 9),
 		delims:                 render.Delims{Left: "{{", Right: "}}"},
 		secureJSONPrefix:       "while(1);",
-		trustedProxies:         []string{"0.0.0.0/0"},
+		trustedProxies:         []string{"0.0.0.0/0", "::/0"},
 		trustedCIDRs:           defaultTrustedCIDRs,
 	}
 	engine.RouterGroup.engine = engine
-	engine.pool.New = func() interface{} {
-		return engine.allocateContext()
+	engine.pool.New = func() any {
+		return engine.allocateContext(engine.maxParams)
 	}
 	return engine
 }
@@ -221,8 +231,8 @@ func (engine *Engine) Handler() http.Handler {
 	return h2c.NewHandler(engine, h2s)
 }
 
-func (engine *Engine) allocateContext() *Context {
-	v := make(Params, 0, engine.maxParams)
+func (engine *Engine) allocateContext(maxParams uint16) *Context {
+	v := make(Params, 0, maxParams)
 	skippedNodes := make([]skippedNode, 0, engine.maxSections)
 	return &Context{engine: engine, params: &v, skippedNodes: &skippedNodes}
 }
@@ -507,7 +517,7 @@ func (engine *Engine) RunUnix(file string) (err error) {
 
 	if engine.isUnsafeTrustedProxies() {
 		debugPrint("[WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.\n" +
-			"Please check https://pkg.go.dev/github.com/imkos/gin#readme-don-t-trust-all-proxies for details.")
+			"Please check https://github.com/imkos/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.")
 	}
 
 	listener, err := net.Listen("unix", file)
@@ -530,7 +540,7 @@ func (engine *Engine) RunFd(fd int) (err error) {
 
 	if engine.isUnsafeTrustedProxies() {
 		debugPrint("[WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.\n" +
-			"Please check https://pkg.go.dev/github.com/imkos/gin#readme-don-t-trust-all-proxies for details.")
+			"Please check https://github.com/imkos/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.")
 	}
 
 	f := os.NewFile(uintptr(fd), fmt.Sprintf("fd@%d", fd))
@@ -551,7 +561,7 @@ func (engine *Engine) RunListener(listener net.Listener) (err error) {
 
 	if engine.isUnsafeTrustedProxies() {
 		debugPrint("[WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.\n" +
-			"Please check https://pkg.go.dev/github.com/imkos/gin#readme-don-t-trust-all-proxies for details.")
+			"Please check https://github.com/imkos/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.")
 	}
 
 	err = http.Serve(listener, engine.Handler())
@@ -664,6 +674,9 @@ func redirectTrailingSlash(c *Context) {
 	req := c.Request
 	p := req.URL.Path
 	if prefix := path.Clean(c.Request.Header.Get("X-Forwarded-Prefix")); prefix != "." {
+		prefix = regSafePrefix.ReplaceAllString(prefix, "")
+		prefix = regRemoveRepeatedChar.ReplaceAllString(prefix, "/")
+
 		p = prefix + "/" + req.URL.Path
 	}
 	req.URL.Path = p + "/"
