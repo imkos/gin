@@ -29,7 +29,6 @@ var (
 	_ Render     = YAML{}
 	_ Render     = Reader{}
 	_ Render     = AsciiJSON{}
-	_ Render     = ProtoBuf{}
 	_ Render     = TOML{}
 )
 

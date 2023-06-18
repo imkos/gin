@@ -999,11 +999,6 @@ func (c *Context) TOML(code int, obj any) {
 	c.Render(code, render.TOML{Data: obj})
 }
 
-// ProtoBuf serializes the given struct as ProtoBuf into the response body.
-func (c *Context) ProtoBuf(code int, obj any) {
-	c.Render(code, render.ProtoBuf{Data: obj})
-}
-
 // String writes the given string into the response body.
 func (c *Context) String(code int, format string, values ...any) {
 	c.Render(code, render.String{Format: format, Data: values})

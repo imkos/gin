@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var _ Render = ProtoBuf{}
+
 // ProtoBuf contains the given interface object.
 type ProtoBuf struct {
 	Data any
